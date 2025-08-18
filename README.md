@@ -188,45 +188,7 @@ Results are automatically saved to `data/results.csv` with:
 - Interest level assessment
 - Meeting scheduling outcomes
 
-## 📁 Project Structure
-
-```
-ai-sales-agent/
-├── bot.py                 # Main AI bot implementation
-├── server.py             # FastAPI server with Twilio webhooks
-├── campaign_manager.py   # Campaign orchestration
-├── sales_context.py      # Sales conversation context
-├── call_recorder.py      # Call outcome tracking
-├── utils/
-│   ├── csv_handler.py    # CSV file management
-│   └── __init__.py
-├── data/
-│   ├── templates/
-│   │   └── leads_template.csv
-│   └── test_sample.csv
-├── pyproject.toml        # Dependencies
-├── .env.example          # Environment template
-└── README.md
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run the linter: `ruff format && ruff check --fix`
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 ## ⚠️ Important Notes
-
-
-
 
 ### Compliance
 - The system respects business hours settings
