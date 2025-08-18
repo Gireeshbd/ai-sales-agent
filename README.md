@@ -44,7 +44,7 @@ Before you begin, make sure you have:
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Gireeshbd/ai-sales-agent
 cd ai-sales-agent
 ```
 
@@ -260,10 +260,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Check CSV column names match exactly: `business_name`, `contact_number`, etc.
 - Ensure phone numbers are in proper format
 - Verify file encoding is UTF-8
-
-
-
-
 ---
-
 **Built using [Pipecat AI Framework](https://pipecat.ai)**
