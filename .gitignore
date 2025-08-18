@@ -1,0 +1,122 @@
+# Environment Variables
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+ai-sales-venv/
+venv/
+env/
+ENV/
+.venv
+.ENV
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+.npm
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# API Keys and Secrets
+last_token.txt
+get_daily_key_instructions.md
+*.key
+*.pem
+secrets.txt
+
+# Data Files (sensitive)
+data/leads.csv
+data/results.csv
+data/*.csv
+!data/templates/
+!data/test_sample.csv
+
+# Temporary Files
+*.tmp
+*.temp
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# UV/uv Files
+.uv_cache/
+uv.lock
+
+# Node.js (if any frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Audio/Video Files
+*.wav
+*.mp3
+*.mp4
+*.avi
+
+# Call Recordings
+recordings/
+audio_output/
+
+# Local Development
+ngrok
+*.ngrok
+local_config.json
+debug.log
+
+# Claude Code specific
+.claude/
+CLAUDE.md
