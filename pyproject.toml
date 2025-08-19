@@ -5,7 +5,7 @@ description = "AI voice agent for outbound sales calls using Pipecat framework"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pipecat-ai[google,deepgram,cartesia]>=0.0.50",
+    "pipecat-ai[cartesia,deepgram,google,silero]>=0.0.50",
     "fastapi>=0.104.1",
     "uvicorn>=0.24.0",
     "pandas>=2.1.3",

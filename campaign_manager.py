@@ -132,8 +132,9 @@ class CampaignManager:
         logger.info(f"Initiating call to {business_name} ({phone_number})")
         
         try:
-            # Track this call
-            call_id = f"call_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{phone_number.replace('+', '').replace('-', '')}"
+            # Track this call - ensure phone_number is string
+            phone_str = str(phone_number)
+            call_id = f"call_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{phone_str.replace('+', '').replace('-', '')}"
             
             self.active_calls[call_id] = {
                 "lead_data": lead_data,
@@ -169,6 +170,10 @@ class CampaignManager:
     async def _initiate_twilio_call(self, to_number: str, lead_data: Dict, call_id: str) -> Dict:
         """Initiate a Twilio outbound call."""
         try:
+            # Ensure phone number is properly formatted for Twilio (E.164 format)
+            phone_str = str(to_number)
+            if not phone_str.startswith('+'):
+                phone_str = '+' + phone_str
             # Create webhook URL with lead data
             webhook_url = f"{self.webhook_base_url}/twilio/webhook"
             
@@ -183,7 +188,7 @@ class CampaignManager:
             auth = aiohttp.BasicAuth(self.twilio_account_sid, self.twilio_auth_token)
             
             data = {
-                "To": to_number,
+                "To": phone_str,
                 "From": self.twilio_from_number,
                 "Url": twiml_url,
                 "Method": "POST",

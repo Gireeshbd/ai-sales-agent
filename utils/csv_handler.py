@@ -27,9 +27,11 @@ class CSVHandler:
         try:
             async with self._lock:
                 # Read CSV synchronously as pandas doesn't have native async support
-                df = await asyncio.get_event_loop().run_in_executor(
-                    None, pd.read_csv, self.leads_path
-                )
+                # Ensure contact_number is read as string to preserve formatting
+                def read_csv_with_dtype():
+                    return pd.read_csv(self.leads_path, dtype={'contact_number': str})
+                
+                df = await asyncio.get_event_loop().run_in_executor(None, read_csv_with_dtype)
                 logger.info(f"Loaded {len(df)} leads from {self.leads_path}")
                 return df
         except Exception as e:
