@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "context7-mcp-server"
+      ],
+      "env": {}
+    }
+  }
+}

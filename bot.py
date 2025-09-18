@@ -37,6 +37,13 @@ logger.add(sys.stderr, level="DEBUG")
 twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
 twilio_auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
 
+# Debug logging for authentication
+logger.debug(f"Twilio Account SID: {twilio_account_sid[:8]}...")
+logger.debug(f"Twilio Auth Token present: {bool(twilio_auth_token)}")
+
+if not twilio_account_sid or not twilio_auth_token:
+    logger.error("Missing Twilio credentials - this will cause authentication errors")
+
 
 async def run_sales_bot(
     websocket_client: WebSocket,
@@ -145,16 +152,15 @@ async def run_sales_bot(
     )
 
     # ------------ INITIALIZATION ------------
-    # Start conversation immediately since call is already connected via Twilio
     async def start_conversation():
-        """Start the sales conversation."""
+        """Start the sales conversation immediately."""
         nonlocal conversation_started
         
         if not conversation_started:
             conversation_started = True
             await call_recorder.record_call_start()
             
-            # Bot introduces itself
+            # Bot introduces itself immediately - call is already live
             await task.queue_frames([
                 TextFrame(f"Hi, this is Alex from VoiceAI Solutions. May I speak with {lead_data.get('contact_name', 'the decision maker')}?")
             ])
@@ -163,9 +169,9 @@ async def run_sales_bot(
     
     @transport.event_handler("on_connected")
     async def on_connected(transport, data):
-        """Transport connected - start conversation."""
-        logger.info("Connected to Twilio stream, starting conversation")
-        await start_conversation()
+        """Transport connected - log connection."""
+        logger.info("Twilio stream transport connected")
+        # Note: Conversation already started - don't wait for this event
 
     @transport.event_handler("on_disconnected")
     async def on_disconnected(transport, data):
@@ -185,6 +191,10 @@ async def run_sales_bot(
     # Set up call recording handlers
     await call_recorder.setup_handlers(transport, task, sales_context)
 
+    # ------------ START CONVERSATION IMMEDIATELY ------------
+    # For Twilio calls, the connection is already live - start talking immediately
+    await start_conversation()
+    
     # ------------ RUN PIPELINE ------------
     runner = PipelineRunner()
     

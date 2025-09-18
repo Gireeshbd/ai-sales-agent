@@ -1,6 +1,7 @@
 """Campaign management for orchestrating outbound sales calls."""
 
 import asyncio
+import base64
 import json
 import os
 from datetime import datetime, time, timedelta
@@ -20,9 +21,9 @@ class CampaignManager:
         self.csv_handler = CSVHandler(leads_csv_path, results_csv_path)
         
         # Twilio configuration
-        self.twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
-        self.twilio_auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
-        self.twilio_from_number = os.getenv("TWILIO_FROM_NUMBER", "")
+        self.twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
+        self.twilio_auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+        self.twilio_from_number = os.getenv("TWILIO_FROM_NUMBER", "").strip()
         self.webhook_base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:7860")
         
         # Campaign settings from environment
@@ -175,7 +176,7 @@ class CampaignManager:
             if not phone_str.startswith('+'):
                 phone_str = '+' + phone_str
             # Create webhook URL with lead data
-            webhook_url = f"{self.webhook_base_url}/twilio/webhook"
+            webhook_url = f"{self.webhook_base_url}/twilio/twiml"
             
             # Prepare TwiML URL with lead data as query parameters
             twiml_params = {
@@ -184,8 +185,13 @@ class CampaignManager:
             }
             twiml_url = f"{self.webhook_base_url}/twilio/twiml?{urlencode(twiml_params)}"
             
-            # Twilio API call
-            auth = aiohttp.BasicAuth(self.twilio_account_sid, self.twilio_auth_token)
+            # Create explicit Basic Auth headers (fixes aiohttp auth issues)
+            credentials = f"{self.twilio_account_sid}:{self.twilio_auth_token}"
+            encoded_credentials = base64.b64encode(credentials.encode()).decode()
+            headers = {
+                "Authorization": f"Basic {encoded_credentials}",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
             
             data = {
                 "To": phone_str,
@@ -202,7 +208,7 @@ class CampaignManager:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"https://api.twilio.com/2010-04-01/Accounts/{self.twilio_account_sid}/Calls.json",
-                    auth=auth,
+                    headers=headers,
                     data=data
                 ) as response:
                     if response.status == 201:
@@ -214,10 +220,21 @@ class CampaignManager:
                         }
                     else:
                         error_text = await response.text()
-                        logger.error(f"Twilio API error: {response.status} - {error_text}")
+                        try:
+                            error_json = await response.json()
+                        except:
+                            error_json = None
+                        
+                        logger.error(f"Twilio API error: {response.status}")
+                        logger.error(f"Response headers: {dict(response.headers)}")
+                        logger.error(f"Response body: {error_text}")
+                        logger.error(f"Response JSON: {error_json}")
+                        logger.error(f"Request URL: {response.url}")
+                        logger.error(f"Request data sent: {data}")
+                        
                         return {
                             "status": "error",
-                            "message": f"Twilio API error: {response.status}"
+                            "message": f"Twilio API error: {response.status} - {error_json.get('message', error_text) if error_json else error_text}"
                         }
                         
         except Exception as e:
