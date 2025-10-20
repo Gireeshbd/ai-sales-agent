@@ -87,7 +87,7 @@ class CSVHandler:
 
                 # Save to file
                 await asyncio.get_event_loop().run_in_executor(
-                    None, final_df.to_csv, self.results_path, False
+                    None, lambda: final_df.to_csv(self.results_path, index=False)
                 )
 
                 logger.info(f"Saved call result for {lead_data.get('business_name', 'Unknown')}")
@@ -110,7 +110,7 @@ class CSVHandler:
 
                 # Save updated leads file
                 await asyncio.get_event_loop().run_in_executor(
-                    None, df.to_csv, self.leads_path, False
+                    None, lambda: df.to_csv(self.leads_path, index=False)
                 )
 
                 logger.info(f"Updated status to '{status}' for {phone_number}")
@@ -228,7 +228,7 @@ class CSVHandler:
 
         try:
             df = pd.DataFrame(sample_data)
-            await asyncio.get_event_loop().run_in_executor(None, df.to_csv, file_path, False)
+            await asyncio.get_event_loop().run_in_executor(None, lambda: df.to_csv(file_path, index=False))
             logger.info(f"Created sample leads CSV at {file_path}")
         except Exception as e:
             logger.error(f"Error creating sample CSV: {e}")

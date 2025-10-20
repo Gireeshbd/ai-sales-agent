@@ -5,16 +5,18 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from loguru import logger
-from pipecat.frames.frames import TextFrame, TranscriptionFrame
+from pipecat.frames.frames import Frame, TextFrame, TranscriptionFrame
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from sales_context import SalesContextManager
 from utils.csv_handler import CSVHandler
 
 
-class CallRecorder:
+class CallRecorder(FrameProcessor):
     """Records and analyzes sales call conversations."""
 
     def __init__(self, lead_data: Dict):
+        super().__init__()
         self.lead_data = lead_data
         self.call_start_time: Optional[datetime] = None
         self.conversation_history: List[Dict] = []
@@ -55,19 +57,21 @@ class CallRecorder:
         })
         logger.debug(f"Assistant: {message}")
 
-    async def process_frame(self, frame, direction):
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process pipeline frames to capture conversation."""
+        await super().process_frame(frame, direction)
+
         if isinstance(frame, TranscriptionFrame):
             # User speech captured
             if frame.text and frame.text.strip():
                 await self.record_user_message(frame.text.strip())
-                
+
         elif isinstance(frame, TextFrame):
             # Assistant response captured
             if frame.text and frame.text.strip():
                 await self.record_assistant_message(frame.text.strip())
 
-        return frame
+        await self.push_frame(frame, direction)
 
     def get_full_conversation(self) -> str:
         """Get the complete conversation as a single string."""

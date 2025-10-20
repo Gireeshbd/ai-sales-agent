@@ -156,14 +156,18 @@ async def twilio_twiml(request: Request):
             pass
     
     # If we have lead data, store it in session for future requests
+    # Store by both call_id and call_sid for flexible lookup
     if lead_data_str and call_id:
-        call_sessions[call_id] = {
+        session_data = {
             "lead_data": lead_data_str,
             "call_sid": call_sid,
+            "call_id": call_id,
             "timestamp": datetime.now().isoformat()
         }
+        call_sessions[call_id] = session_data
         if call_sid:
-            call_sessions[call_sid] = call_sessions[call_id]  # Duplicate by call_sid for lookup
+            call_sessions[call_sid] = session_data  # Duplicate by call_sid for WebSocket lookup
+        logger.info(f"Stored session data for call_id={call_id} and call_sid={call_sid}")
             
     # Try to get call_sid from form data if not in query params
     if not call_sid:
@@ -237,32 +241,20 @@ async def twilio_twiml(request: Request):
         # Store additional session data for WebSocket lookup
         if call_id in call_sessions:
             call_sessions[call_id]["websocket_ready"] = True
-        
-        # Get Twilio credentials for WebSocket authentication
-        twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
-        twilio_auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
-        
+
         logger.info(f"Generated WebSocket URL: {stream_url}")
-        logger.info(f"Call session stored for: {call_id}")
-        logger.info(f"Twilio Account SID: {twilio_account_sid[:8] if twilio_account_sid else 'MISSING'}...")
-        logger.info(f"Twilio Auth Token present: {bool(twilio_auth_token)}")
-        
-        # Ensure all parameters have values
-        if not twilio_account_sid or not twilio_auth_token:
-            logger.error("Missing Twilio credentials for Stream parameters")
-        
+        logger.info(f"Call session stored for call_id={call_id}")
+        logger.info(f"Session will be retrieved by CallSid in WebSocket handler")
+
+        # Simple TwiML without parameters - we'll look up session data by CallSid
         twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
-        <Stream url="{stream_url}">
-            <Parameter name="accountSid" value="{twilio_account_sid}" />
-            <Parameter name="authToken" value="{twilio_auth_token}" />
-            <Parameter name="callId" value="{call_id}" />
-        </Stream>
+        <Stream url="{stream_url}" />
     </Connect>
 </Response>"""
-        
-        logger.info(f"Generated TwiML response with parameters: accountSid={twilio_account_sid[:8] if twilio_account_sid else 'None'}..., callId={call_id}")
+
+        logger.info(f"Generated TwiML response for call_id={call_id}")
         logger.debug(f"Full TwiML response: {twiml_response}")
         
         return Response(
@@ -298,80 +290,72 @@ async def twilio_stream_websocket(websocket: WebSocket):
         # Wait for Twilio's start message (first message is usually "connected", then "start")
         start_data = {}
         message_data = {}
+        start_message = None
         
-        while not start_data:
-            message_text = await websocket.receive_text()
-            logger.debug(f"Raw WebSocket message from Twilio: {message_text}")
-            
-            message_data = json.loads(message_text)
-            logger.debug(f"Parsed message data: {message_data}")
-            
-            # Look for the start event with call details
-            if message_data.get("event") == "start":
-                start_data = message_data
-                break
-            elif message_data.get("start"):
-                # Sometimes it's nested under "start" key
-                start_data = message_data.get("start", {})
-                break
-            else:
-                logger.debug(f"Received {message_data.get('event', 'unknown')} event, waiting for start event...")
-        
+        while not start_data:
+            message_text = await websocket.receive_text()
+            logger.debug(f"Raw WebSocket message from Twilio: {message_text}")
+
+            message_data = json.loads(message_text)
+            logger.debug(f"Parsed message data: {message_data}")
+
+            # Look for the start event with call details
+            if message_data.get("event") == "start":
+                start_message = message_data
+                start_data = message_data.get("start") or message_data
+                break
+
+            start_block = message_data.get("start")
+            if start_block:
+                # Sometimes payload arrives under a top-level "start" key
+                start_message = message_data
+                start_data = start_block
+                break
+
+            logger.debug(f"Received {message_data.get('event', 'unknown')} event, waiting for start event...")
+        if start_message is not None:
+            logger.debug(f"Twilio start payload: {start_message}")
+
         # Extract call information from Twilio's start message
         logger.debug(f"Start data extracted: {start_data}")
         call_sid = start_data.get("callSid")
         stream_sid = start_data.get("streamSid")
         
-        # Extract custom parameters passed via TwiML
-        # Twilio might send these as "customParameters" or "parameters"
-        custom_parameters = start_data.get("customParameters", {})
-        if not custom_parameters:
-            custom_parameters = start_data.get("parameters", {})
-        
-        account_sid = custom_parameters.get("accountSid")
-        auth_token = custom_parameters.get("authToken") 
-        call_id = custom_parameters.get("callId")
-        
         logger.info(f"WebSocket call details - CallSid: {call_sid}, StreamSid: {stream_sid}")
-        logger.info(f"Custom parameters extracted: {custom_parameters}")
-        
-        # Safe logging for account_sid (avoid None slicing error)
-        account_sid_display = account_sid[:8] + "..." if account_sid else "None"
-        logger.info(f"Custom parameters - AccountSid: {account_sid_display}, CallId: {call_id}")
-        
-        # Verify credentials match environment
-        expected_account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
-        expected_auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
-        
-        logger.debug(f"Expected AccountSid: {expected_account_sid[:8]}...")
-        logger.debug(f"Received AccountSid: {account_sid}")
-        
+
         # Validate that we have the required data from Twilio
         if not call_sid or not stream_sid:
             logger.error(f"Missing required Twilio data - CallSid: {call_sid}, StreamSid: {stream_sid}")
             logger.error(f"Message structure might be incorrect. Full message: {message_data}")
             await websocket.close()
             return
-            
-        if account_sid != expected_account_sid or auth_token != expected_auth_token:
-            logger.error(f"WebSocket authentication failed - invalid credentials")
-            logger.error(f"Expected: {expected_account_sid}, Got: {account_sid}")
-            await websocket.close()
-            return
-        
-        # Find call session data using call_id from parameters
+
+        # Find call session data using CallSid (Twilio's unique identifier)
+        # This is more reliable than custom parameters
         lead_data_str = None
-        if call_id and call_id in call_sessions:
-            lead_data_str = call_sessions[call_id]["lead_data"]
-            logger.info(f"Found session data for call_id: {call_id}")
-        
+        call_id = None
+
+        # Strategy 1: Direct lookup by CallSid
+        if call_sid in call_sessions:
+            lead_data_str = call_sessions[call_sid]["lead_data"]
+            call_id = call_sessions[call_sid].get("call_id", call_sid)
+            logger.info(f"Found session data for call_sid: {call_sid}")
+
+        # Strategy 2: Search all sessions for matching CallSid (fallback)
         if not lead_data_str:
-            logger.error(f"No session data found for call_id: {call_id}")
+            for session_id, session_data in call_sessions.items():
+                if session_data.get("call_sid") == call_sid:
+                    lead_data_str = session_data["lead_data"]
+                    call_id = session_data.get("call_id", session_id)
+                    logger.info(f"Found session data by searching for call_sid: {call_sid}")
+                    break
+
+        if not lead_data_str:
+            logger.error(f"No session data found for call_sid: {call_sid}")
+            logger.error(f"Available sessions: {list(call_sessions.keys())}")
             await websocket.close()
             return
         
-        # Use the initial_message we already received (no need to receive again)
-        logger.debug(f"Using start message: {initial_message}")
         
         # We already have call_sid and stream_sid from earlier parsing
             
@@ -394,6 +378,7 @@ async def twilio_stream_websocket(websocket: WebSocket):
         
     except Exception as e:
         logger.error(f"Error in stream websocket: {e}")
+        logger.exception("Full traceback:")
     finally:
         # Clean up
         if 'call_sid' in locals() and call_sid in active_calls:
