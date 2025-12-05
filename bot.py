@@ -87,12 +87,14 @@ async def run_sales_bot(
             audio_in_enabled=True,
             audio_out_enabled=True,
             add_wav_header=False,
+            audio_in_sample_rate=8000,   # Twilio telephony sample rate
+            audio_out_sample_rate=8000,  # Twilio telephony sample rate
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(
-                    confidence=0.6,      # Slightly lower for phone quality
-                    start_secs=0.2,      # Responsive interruptions
-                    stop_secs=0.8,       # Allow natural pauses
-                    min_volume=0.5,      # Adjusted for phone audio
+                    confidence=0.7,      # Higher confidence for phone quality
+                    start_secs=0.3,      # Slightly slower to avoid cutting off
+                    stop_secs=0.7,       # Allow natural pauses
+                    min_volume=0.3,      # Lower threshold for phone audio
                 )
             ),
             serializer=serializer,
@@ -101,16 +103,20 @@ async def run_sales_bot(
 
     # ------------ AI SERVICES SETUP ------------
     
-    # Speech-to-Text
+    # Speech-to-Text with Twilio telephony configuration
     stt = DeepgramSTTService(
         api_key=os.getenv("DEEPGRAM_API_KEY"),
-        audio_passthrough=True
+        audio_passthrough=True,
+        sample_rate=8000,  # Twilio uses 8kHz telephony quality
+        encoding="mulaw"   # Twilio's audio format
     )
 
-    # Text-to-Speech with professional voice
+    # Text-to-Speech with professional voice and Twilio configuration
     tts = CartesiaTTSService(
         api_key=os.getenv("CARTESIA_API_KEY"),
         voice_id=os.getenv("CARTESIA_VOICE_ID", "b7d50908-b17c-442d-ad8d-810c63997ed9"),
+        sample_rate=8000,  # Match Twilio's 8kHz
+        encoding="mulaw",  # Match Twilio's format
         push_silence_after_stop=True,
     )
 
@@ -121,19 +127,18 @@ async def run_sales_bot(
     )
 
     # ------------ CONVERSATION CONTEXT SETUP ------------
-    
+
     # Generate personalized system prompt
     opening_prompt = sales_context.generate_opening_prompt(lead_data)
     context_prompt = sales_context.generate_context_prompt(lead_data)
-    
+
+    # Combine prompts into single system message for better LLM handling
+    combined_system_prompt = f"{context_prompt}\n\n{opening_prompt}"
+
     messages = [
         {
             "role": "system",
-            "content": context_prompt,
-        },
-        {
-            "role": "system", 
-            "content": opening_prompt,
+            "content": combined_system_prompt,
         }
     ]
 
@@ -142,14 +147,14 @@ async def run_sales_bot(
 
     # ------------ PIPELINE SETUP ------------
     pipeline = Pipeline([
-        transport.input(),
-        stt,
-        context_aggregator.user(),
-        llm,
-        tts,
-        transport.output(),
-        context_aggregator.assistant(),
-        call_recorder,
+        transport.input(),              # 1. Audio in from Twilio
+        stt,                           # 2. Speech to text
+        context_aggregator.user(),     # 3. Capture user message
+        llm,                           # 4. Generate AI response
+        tts,                           # 5. Text to speech
+        context_aggregator.assistant(), # 6. Capture assistant response (BEFORE output)
+        transport.output(),            # 7. Audio out to Twilio
+        call_recorder,                 # 8. Record conversation
     ])
 
     task = PipelineTask(
@@ -191,9 +196,12 @@ async def run_sales_bot(
         nonlocal transport_connected
         logger.info("Twilio media stream connected successfully")
         logger.debug(f"Connection data: {data}")
-        
+
         transport_connected = True
-        
+
+        # Wait a moment for transport to fully stabilize before sending greeting
+        await asyncio.sleep(0.5)
+
         # Start the conversation now that transport is ready
         await start_conversation()
 
@@ -228,19 +236,38 @@ async def run_sales_bot(
     # ------------ CONNECTION TIMEOUT PROTECTION ------------
     async def connection_timeout():
         """Ensure we don't wait forever for connection."""
-        await asyncio.sleep(10)
-        
+        await asyncio.sleep(30)  # Increased from 10 to 30 seconds for more reliable connection
+
         if not transport_connected:
             logger.error("Transport connection timeout - media stream never connected")
             logger.error("This usually means Twilio's WebSocket failed to establish")
-            
+
             if call_started:
                 await call_recorder.record_failed_call("connection_timeout", "Media stream failed to connect")
-            
+
             await task.cancel()
 
     # Start timeout monitor
     timeout_task = asyncio.create_task(connection_timeout())
+
+    # ------------ CONVERSATION SAFEGUARD ------------
+    async def conversation_safeguard():
+        """Ensure conversation starts even if on_connected event is missed."""
+        await asyncio.sleep(2.0)  # Wait 2 seconds for normal connection
+        
+        nonlocal conversation_started, transport_connected
+        
+        if not conversation_started:
+            logger.warning("on_connected event not received within timeout - forcing conversation start")
+            
+            # Force connection state since we know we have an active websocket
+            transport_connected = True
+            
+            # Attempt to start conversation
+            await start_conversation()
+
+    # Start safeguard
+    safeguard_task = asyncio.create_task(conversation_safeguard())
 
     # ------------ RUN PIPELINE ------------
     runner = PipelineRunner()
@@ -270,6 +297,14 @@ async def run_sales_bot(
             timeout_task.cancel()
             try:
                 await timeout_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel safeguard if still running
+        if not safeguard_task.done():
+            safeguard_task.cancel()
+            try:
+                await safeguard_task
             except asyncio.CancelledError:
                 pass
         

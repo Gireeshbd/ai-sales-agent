@@ -178,9 +178,8 @@ class CampaignManager:
             # Create webhook URL with lead data
             webhook_url = f"{self.webhook_base_url}/twilio/twiml"
             
-            # Prepare TwiML URL with lead data as query parameters
+            # Prepare TwiML URL with call_id (lead data stored server-side)
             twiml_params = {
-                "lead_data": json.dumps(lead_data),
                 "call_id": call_id
             }
             twiml_url = f"{self.webhook_base_url}/twilio/twiml?{urlencode(twiml_params)}"

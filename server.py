@@ -183,6 +183,12 @@ async def twilio_twiml(request: Request):
         if call_id and call_id in call_sessions:
             lead_data_str = call_sessions[call_id]["lead_data"]
             logger.info(f"Retrieved lead data from session for call_id: {call_id}")
+        # Try to get from CampaignManager active calls (primary method now)
+        elif call_id and campaign_manager and call_id in campaign_manager.active_calls:
+            lead_data_obj = campaign_manager.active_calls[call_id].get("lead_data")
+            if lead_data_obj:
+                lead_data_str = json.dumps(lead_data_obj)
+                logger.info(f"Retrieved lead data from CampaignManager for call_id: {call_id}")
         # Try call_sid if call_id didn't work
         elif call_sid and call_sid in call_sessions:
             lead_data_str = call_sessions[call_sid]["lead_data"]  
@@ -198,7 +204,7 @@ async def twilio_twiml(request: Request):
                     break
     
     if not lead_data_str:
-        logger.error(f"No lead data in TwiML request and no session data found. call_id: {call_id}, call_sid: {call_sid}")
+        logger.error(f"No lead data found. call_id: {call_id}, call_sid: {call_sid}")
         twiml_response = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Unable to process call. No lead data provided.</Say>
@@ -292,27 +298,48 @@ async def twilio_stream_websocket(websocket: WebSocket):
         message_data = {}
         start_message = None
         
-        while not start_data:
-            message_text = await websocket.receive_text()
-            logger.debug(f"Raw WebSocket message from Twilio: {message_text}")
-
-            message_data = json.loads(message_text)
-            logger.debug(f"Parsed message data: {message_data}")
-
-            # Look for the start event with call details
-            if message_data.get("event") == "start":
-                start_message = message_data
-                start_data = message_data.get("start") or message_data
-                break
-
-            start_block = message_data.get("start")
-            if start_block:
-                # Sometimes payload arrives under a top-level "start" key
-                start_message = message_data
-                start_data = start_block
-                break
-
-            logger.debug(f"Received {message_data.get('event', 'unknown')} event, waiting for start event...")
+        while not start_data:
+
+            message_text = await websocket.receive_text()
+
+            logger.debug(f"Raw WebSocket message from Twilio: {message_text}")
+
+
+
+            message_data = json.loads(message_text)
+
+            logger.debug(f"Parsed message data: {message_data}")
+
+
+
+            # Look for the start event with call details
+
+            if message_data.get("event") == "start":
+
+                start_message = message_data
+
+                start_data = message_data.get("start") or message_data
+
+                break
+
+
+
+            start_block = message_data.get("start")
+
+            if start_block:
+
+                # Sometimes payload arrives under a top-level "start" key
+
+                start_message = message_data
+
+                start_data = start_block
+
+                break
+
+
+
+            logger.debug(f"Received {message_data.get('event', 'unknown')} event, waiting for start event...")
+
         if start_message is not None:
             logger.debug(f"Twilio start payload: {start_message}")
 
@@ -359,7 +386,11 @@ async def twilio_stream_websocket(websocket: WebSocket):
         
         # We already have call_sid and stream_sid from earlier parsing
             
-        lead_data = json.loads(lead_data_str)
+        
+        import urllib.parse
+
+        lead_data = json.loads(urllib.parse.unquote(lead_data_str))
+
         business_name = lead_data.get("business_name", "Unknown")
         
         logger.info(f"Starting bot for {business_name} - Stream SID: {stream_sid}, Call SID: {call_sid}")
@@ -562,6 +593,5 @@ if __name__ == "__main__":
         "server:app",
         host="0.0.0.0",
         port=port,
-        reload=True,
         log_level="info"
     )
